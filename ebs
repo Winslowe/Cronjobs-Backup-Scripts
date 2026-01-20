@@ -1,0 +1,94 @@
+import os
+import sys
+import subprocess
+
+# Ön tanımlı kolay zamanlama kalıpları
+PRESETS = {
+    "dakikalık": "* * * * *",
+    "saatlik": "0 * * * *",
+    "günlük": "0 0 * * *",
+    "haftalık": "0 0 * * 0",
+    "aylık": "0 0 1 * *",
+    "geceyarısı": "0 0 * * *"
+}
+
+def get_crontab():
+    """Mevcut crontab içeriğini çeker."""
+    try:
+        return subprocess.check_output("crontab -l", shell=True, stderr=subprocess.DEVNULL).decode().splitlines()
+    except:
+        return []
+
+def save_crontab(lines):
+    """Yeni crontab içeriğini sisteme yükler."""
+    temp_file = "temp_cron.txt"
+    with open(temp_file, "w") as f:
+        for line in lines:
+            f.write(line + "\n")
+    os.system(f"crontab {temp_file}")
+    os.remove(temp_file)
+
+def add_task(schedule, script_path):
+    """Yeni bir yedekleme görevi ekler."""
+    cron_time = PRESETS.get(schedule, schedule)
+    full_path = os.path.abspath(script_path)
+    
+    if not os.path.exists(full_path):
+        print(f"❌ Hata: '{full_path}' dosya yolu bulunamadı!")
+        return
+
+    new_line = f"{cron_time} {full_path} #EBS_TASK"
+    cron_lines = get_crontab()
+    cron_lines.append(new_line)
+    save_crontab(cron_lines)
+    print(f"✅ Başarılı: Görev eklendi. ({schedule})")
+
+def list_tasks():
+    """Tüm EBS görevlerini listeler."""
+    lines = get_crontab()
+    ebs_tasks = [l for l in lines if "#EBS_TASK" in l]
+    
+    if not ebs_tasks:
+        print("ℹ️ Henüz tanımlı bir EBS görevi bulunmuyor.")
+        return
+
+    print("\n--- MEVCUT YEDEKLEME GÖREVLERİNİZ ---")
+    print(f"{'ID':<4} {'ZAMANLAMA':<15} {'KOMUT / SCRIPT'}")
+    for i, task in enumerate(ebs_tasks):
+        parts = task.split()
+        time_part = " ".join(parts[:5])
+        cmd_part = parts[5]
+        print(f"{i:<4} {time_part:<15} {cmd_part}")
+    print("--------------------------------------\n")
+
+def delete_task(task_id):
+    """ID numarasına göre görevi siler."""
+    lines = get_crontab()
+    ebs_tasks = [l for l in lines if "#EBS_TASK" in l]
+    
+    try:
+        task_to_delete = ebs_tasks[int(task_id)]
+        new_lines = [l for l in lines if l != task_to_delete]
+        save_crontab(new_lines)
+        print(f"🗑️ Görev başarıyla silindi.")
+    except (IndexError, ValueError):
+        print("❌ Hata: Geçersiz ID numarası!")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("\n--- EBS (EasyBackup Scheduler) ---")
+        print("Kullanım Komutları:")
+        print("  add [zaman] [dosya]  : Görev ekler (Örn: add günlük yedek.sh)")
+        print("  list                 : Tüm görevleri listeler")
+        print("  delete [id]          : Görevi siler")
+        print("\nZaman Kalıpları: dakikalık, saatlik, günlük, haftalık, aylık")
+    else:
+        cmd = sys.argv[1]
+        if cmd == "add" and len(sys.argv) == 4:
+            add_task(sys.argv[2], sys.argv[3])
+        elif cmd == "list":
+            list_tasks()
+        elif cmd == "delete" and len(sys.argv) == 3:
+            delete_task(sys.argv[2])
+        else:
+            print("❌ Yanlış komut kullanımı!")
